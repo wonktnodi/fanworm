@@ -8,25 +8,6 @@ import (
     "strings"
 )
 
-// Action is an action that occurs after the completion of an event.
-type Action int
-
-const (
-    // None indicates that no action should occur following an event.
-    None Action = iota
-    // Detach detaches the client.
-    Detach
-    // Close closes the client.
-    Close
-    // Shutdown shutdowns the server.
-    Shutdown
-)
-
-// Options are set when the client opens.
-type Options struct {
-    // TCPKeepAlive (SO_KEEPALIVE) socket option.
-    TCPKeepAlive time.Duration
-}
 
 // Info represents a information about the connection
 type Info struct {

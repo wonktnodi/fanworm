@@ -12,15 +12,16 @@ type Reactor struct {
 }
 
 func NewReactor() (*Reactor, error) {
-    p, err := internal.MakePoller()
-    if err != nil {
-        return nil, err
-    }
-    var ret Reactor
-    ret.pollerFD = p
-    ret.timerQueue = internal.NewTimeoutQueue()
-
-    return &ret, nil
+    //p, err := internal.MakePoller()
+    //if err != nil {
+    //    return nil, err
+    //}
+    //var ret Reactor
+    //ret.pollerFD = p
+    //ret.timerQueue = internal.NewTimeoutQueue()
+    //
+    //return &ret, nil
+    return nil, nil
 }
 
 func (r *Reactor) Close() {
