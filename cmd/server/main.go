@@ -21,11 +21,11 @@ func main() {
         return
     }
     events.Opened = func(id int, info base.Info) (out []byte, opts base.Options, action base.Action) {
-        //log.Printf("opened: %d: %s", id, addr.Remote.String())
+        log.Debugf("opened: %d: %s", id, info.RemoteAddr.String())
         return
     }
     events.Closed = func(id int, err error) (action base.Action) {
-        //log.Printf("closed: %d", id)
+        log.Debugf("closed: %d", id)
         return
     }
     events.Data = func(id int, in []byte) (out []byte, action base.Action) {
