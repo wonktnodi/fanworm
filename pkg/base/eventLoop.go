@@ -1,7 +1,6 @@
 package base
 
 import (
-    "github.com/wonktnodi/go-revolver/internal"
     "syscall"
     "sync"
     "time"
@@ -12,13 +11,13 @@ import (
 )
 
 func serve(events Events, lns []*listener) error {
-    p, err := internal.MakePoll()
+    p, err := CreatePoll()
     if err != nil {
         return err
     }
     defer syscall.Close(p)
     for _, ln := range lns {
-        if err := internal.AddRead(p, ln.fd, nil, nil); err != nil {
+        if err := AddRead(p, ln.fd, nil, nil); err != nil {
             return err
         }
     }
@@ -28,7 +27,7 @@ func serve(events Events, lns []*listener) error {
     unlock := func() { mu.Unlock() }
     fdconn := make(map[int]*unixConn)
     idconn := make(map[int]*unixConn)
-    timeoutqueue := internal.NewTimeoutQueue()
+    timeoutqueue := NewTimeoutQueue()
     var id int
     dial := func(addr string, timeout time.Duration) int {
         lock()
@@ -76,13 +75,13 @@ func serve(events Events, lns []*listener) error {
                     return err
                 }
                 lock()
-                err = internal.AddRead(p, fd, &c.readon, &c.writeon)
+                err = AddRead(p, fd, &c.readon, &c.writeon)
                 if err != nil {
                     unlock()
                     syscall.Close(fd)
                     return err
                 }
-                err = internal.AddWrite(p, fd, &c.readon, &c.writeon)
+                err = AddWrite(p, fd, &c.readon, &c.writeon)
                 if err != nil {
                     unlock()
                     syscall.Close(fd)
@@ -120,7 +119,7 @@ func serve(events Events, lns []*listener) error {
             ok = false
         } else if !c.wake {
             c.wake = true
-            err = internal.AddWrite(p, c.fd, &c.readon, &c.writeon)
+            err = AddWrite(p, c.fd, &c.readon, &c.writeon)
         }
         unlock()
         if err != nil {
@@ -189,7 +188,7 @@ func serve(events Events, lns []*listener) error {
     var rsa syscall.Sockaddr
 
     var packet [0xFFFF]byte
-    var evs = internal.MakeEvents(64)
+    var evs = MakeEvents(64)
     nextTicker := time.Now()
     for {
         delay := nextTicker.Sub(time.Now())
@@ -198,7 +197,7 @@ func serve(events Events, lns []*listener) error {
         } else if delay > time.Second/4 {
             delay = time.Second / 4
         }
-        pn, err := internal.Wait(p, evs, delay)
+        pn, err := Wait(p, evs, delay)
         if err != nil && err != syscall.EINTR {
             return err
         }
@@ -268,7 +267,7 @@ func serve(events Events, lns []*listener) error {
             var out []byte
             var ln *listener
             var lnidx int
-            var fd = internal.GetFD(evs, i)
+            var fd = GetFD(evs, i)
             for lnidx, ln = range lns {
                 if fd == ln.fd {
                     goto accept
@@ -299,7 +298,7 @@ func serve(events Events, lns []*listener) error {
                 raddr:   sockaddrToAddr(rsa),
             }
             // we have a remote address but the local address yet.
-            if err = internal.AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
+            if err = AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
                 goto fail
             }
             fdconn[nfd] = c
@@ -307,7 +306,7 @@ func serve(events Events, lns []*listener) error {
             goto next
         opened:
             filladdrs(c)
-            if err = internal.AddRead(p, c.fd, &c.readon, &c.writeon); err != nil {
+            if err = AddRead(p, c.fd, &c.readon, &c.writeon); err != nil {
                 goto fail
             }
             if events.Opened != nil {
@@ -319,7 +318,7 @@ func serve(events Events, lns []*listener) error {
                 })
                 lock()
                 if c.opts.TCPKeepAlive > 0 {
-                    internal.SetKeepAlive(c.fd, int(c.opts.TCPKeepAlive/time.Second))
+                    SetKeepAlive(c.fd, int(c.opts.TCPKeepAlive/time.Second))
                 }
                 if len(out) > 0 {
                     c.outbuf = append(c.outbuf, out...)
@@ -389,7 +388,7 @@ func serve(events Events, lns []*listener) error {
                         goto close
                     }
                     if err == syscall.EAGAIN {
-                        if err = internal.AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
+                        if err = AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
                             goto fail
                         }
                         goto next
@@ -408,7 +407,7 @@ func serve(events Events, lns []*listener) error {
             }
             if len(c.outbuf)-c.outpos == 0 {
                 if !c.wake {
-                    if err = internal.DelWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
+                    if err = DelWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
                         goto fail
                     }
                 }
@@ -416,7 +415,7 @@ func serve(events Events, lns []*listener) error {
                     goto close
                 }
             } else {
-                if err = internal.AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
+                if err = AddWrite(p, c.fd, &c.readon, &c.writeon); err != nil {
                     goto fail
                 }
             }

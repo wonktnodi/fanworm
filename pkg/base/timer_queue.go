@@ -1,13 +1,15 @@
-package internal
+package base
 
 import (
     "container/heap"
     "time"
+    "github.com/wonktnodi/go-revolver/pkg/log"
 )
 
 // TimeoutQueueItem is an item for TimeoutQueue
 type TimeoutQueueItem interface {
     Timeout() time.Time
+    TimerID() uint64
 }
 
 type timeoutPriorityQueue []TimeoutQueueItem
@@ -30,7 +32,7 @@ func (pq *timeoutPriorityQueue) Pop() interface{} {
     old := *pq
     n := len(old)
     item := old[n-1]
-    *pq = old[0 : n-1]
+    *pq = old[0: n-1]
     return item
 }
 
@@ -67,4 +69,15 @@ func (q *TimeoutQueue) Peek() TimeoutQueueItem {
 // Len returns the number of items in the queue
 func (q *TimeoutQueue) Len() int {
     return q.pq.Len()
+}
+
+func (q *TimeoutQueue) Remove(id uint64) (err error) {
+    for idx, v := range q.pq {
+        if v.TimerID() == id {
+            heap.Remove(&q.pq, idx)
+            return
+        }
+    }
+    log.Warnf("can't find ")
+    return NewError(ErrCodeNotFound)
 }

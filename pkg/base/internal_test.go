@@ -1,4 +1,4 @@
-package internal
+package base
 
 import (
 	"fmt"
@@ -12,6 +12,10 @@ type queueItem struct {
 
 func (item *queueItem) Timeout() time.Time {
 	return item.timeout
+}
+
+func (item *queueItem) TimerID() uint64 {
+	return 0
 }
 
 func TestQueue(t *testing.T) {

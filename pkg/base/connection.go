@@ -50,6 +50,10 @@ func (c *unixConn) Timeout() time.Time {
     return c.timeout
 }
 
+func (c *unixConn) TimerID() uint64 {
+    return 0
+}
+
 func (c *unixConn) Read(p []byte) (n int, err error) {
     return syscall.Read(c.fd, p)
 }
@@ -134,4 +138,37 @@ func filladdrs(c *unixConn) {
         sa, _ := syscall.Getsockname(c.fd)
         c.raddr = sockaddrToAddr(sa)
     }
+}
+
+type Connection struct {
+    id, fd  int
+    outbuf  []byte
+    outpos  int
+    action  Action
+    opts    Options
+    raddr   net.Addr // remote addr
+    laddr   net.Addr // local addr
+    lnidx   int
+    err     error
+    dialerr error
+}
+
+func (c *Connection) HandleInput(fd int) (err error) {
+    return
+}
+
+func (c *Connection) HandleOutput(fd int) (err error) {
+    return
+}
+
+func (c *Connection) HandleException(fd int) (err error) {
+    return
+}
+
+func (c *Connection) HandleTimeout(fd int) (err error) {
+    return
+}
+
+func (c *Connection) GetID() (id int) {
+    return
 }
