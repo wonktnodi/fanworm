@@ -5,6 +5,9 @@ import (
     "github.com/wonktnodi/go-revolver/pkg/log"
     "time"
     "sync/atomic"
+    "syscall"
+    "github.com/wonktnodi/go-revolver/pkg"
+    "sync"
 )
 
 type Reactor interface {
@@ -33,14 +36,23 @@ func (t timerInfo) TimerID() uint64 {
     return t.id
 }
 
+func (t timerInfo) HandleTimeout(id uint64) error {
+    if nil != t.handler {
+        return t.handler.HandleTimeout(t.id)
+    } else {
+        return nil
+    }
+}
 
 type PollReactor struct {
     PollBase
-    pollerFD   int
-    timerQueue *TimeoutQueue
-    timerID    uint64
-    eventsMgr  *HandlerMgr
-
+    exitFlag            int64
+    timerID             uint64
+    timerQueue          *TimeoutQueue
+    eventsMgr           *HandlerMgr
+    defaultWaitInterval int64
+    wgStart, wgEnd      sync.WaitGroup
+    pollerFD            int
 }
 
 func NewPollReactor() (p *PollReactor, err error) {
@@ -68,21 +80,69 @@ func (r *PollReactor) Open() (err error) {
     }
     r.createEvents(128)
     r.timerID = 1
-
+    r.defaultWaitInterval = pkg.MinReactorLoopInterval
+    r.exitFlag = 0
     return
 }
 
+func (r *PollReactor) Start() {
+    r.wgStart.Add(1)
+    go r.EventLoop()
+    r.wgStart.Wait()
+}
+
 func (r *PollReactor) Close() {
-    r.timerQueue = nil
-    r.eventsMgr = nil
-    r.events = nil
+    atomic.StoreInt64(&r.exitFlag, 1)
     if err := closePoll(r.pollerFD); err != nil {
         log.Errorf("failed to close poll FD, err: %v", err)
     }
+    r.wgEnd.Wait()
+
+    r.timerQueue = nil
+    r.eventsMgr = nil
+    r.events = nil
 }
 
 func (r *PollReactor) EventLoop() {
+    var now time.Time
+    var exitFlag = atomic.LoadInt64(&r.exitFlag)
+    r.wgEnd.Add(1)
+    r.wgStart.Done()
+    for {
+        pn, err := r.wait(int64(r.defaultWaitInterval))
+        if err != nil && err != syscall.EINTR {
+            break
+        }
+        // event processing
+        for i := 0; i < pn; i ++ {
 
+        }
+
+        // check exit flag
+        exitFlag = atomic.LoadInt64(&r.exitFlag)
+        if exitFlag > 0 {
+            break
+        }
+
+        // timer processing
+        if r.timerQueue.Len() > 0 {
+            now = time.Now()
+            for {
+                v := r.timerQueue.Peek()
+                if v == nil {
+                    break
+                }
+                if now.After(v.Timeout()) {
+                    r.timerQueue.Pop()
+                    v.HandleTimeout(v.TimerID())
+                } else {
+                    break
+                }
+            }
+        }
+    }
+    r.wgEnd.Done()
+    return
 }
 
 func (r *PollReactor) AddEventHandler(handler *EventHandler) (err error) {

@@ -161,11 +161,11 @@ func (c *Connection) HandleOutput(fd int) (err error) {
     return
 }
 
-func (c *Connection) HandleException(fd int) (err error) {
+func (c *Connection) HandleException(id uint64) (err error) {
     return
 }
 
-func (c *Connection) HandleTimeout(fd int) (err error) {
+func (c *Connection) HandleTimeout(id uint64) (err error) {
     return
 }
 

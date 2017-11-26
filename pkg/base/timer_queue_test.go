@@ -19,6 +19,10 @@ func (t TestTimeout) TimerID() uint64 {
     return t.id
 }
 
+func (t TestTimeout) HandleTimeout(id uint64) error {
+    return nil
+}
+
 func TestTimeoutBasic(t *testing.T) {
     que := NewTimeoutQueue()
     assert.NotNil(t, que, "create timer queue")

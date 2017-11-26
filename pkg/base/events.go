@@ -126,10 +126,11 @@ func Serve(events Events, addr ...string) error {
         }
         lns = append(lns, &ln)
     }
-    if stdlib {
-        return servenet(events, lns)
-    }
-    return serve(events, lns)
+    //if stdlib {
+    //    return servenet(events, lns)
+    //}
+    //return serve(events, lns)
+    return nil
 }
 
 // InputStream is a helper type for managing input streams inside the

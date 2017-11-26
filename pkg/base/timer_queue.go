@@ -10,6 +10,7 @@ import (
 type TimeoutQueueItem interface {
     Timeout() time.Time
     TimerID() uint64
+    HandleTimeout(fd uint64) error
 }
 
 type timeoutPriorityQueue []TimeoutQueueItem

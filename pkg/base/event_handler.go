@@ -23,7 +23,7 @@ type EventHandler interface {
     HandleInput(fd int) error
     HandleOutput(fd int) error
     HandleException(fd int) error
-    HandleTimeout(fd int) error
+    HandleTimeout(id uint64) error
     GetHandle() int
     GetID() int
 }

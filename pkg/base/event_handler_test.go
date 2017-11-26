@@ -11,6 +11,7 @@ type TestEventHandler struct{
     timeout time.Time
 }
 
+var timerTriggered = 0
 func (h TestEventHandler) HandleInput(fd int) (err error) {
     return
 }
@@ -23,7 +24,8 @@ func (h TestEventHandler) HandleException(fd int) (err error) {
     return
 }
 
-func (h TestEventHandler) HandleTimeout(fd int) (err error) {
+func (h TestEventHandler) HandleTimeout(fd uint64) (err error) {
+    timerTriggered ++
     return
 }
 

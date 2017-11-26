@@ -18,6 +18,11 @@ func (item *queueItem) TimerID() uint64 {
 	return 0
 }
 
+func (item *queueItem) HandleTimeout(id uint64) error {
+	return nil
+}
+
+
 func TestQueue(t *testing.T) {
 	q := NewTimeoutQueue()
 	item := &queueItem{timeout: time.Unix(0, 5)}
