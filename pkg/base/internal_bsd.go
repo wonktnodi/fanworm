@@ -11,8 +11,49 @@ import (
     "time"
 )
 
+const (
+    evListen = syscall.EVFILT_READ
+    evRead   = syscall.EVFILT_READ
+    evWrite  = syscall.EVFILT_READ
+    evClient = syscall.EVFILT_READ | syscall.EVFILT_WRITE
+)
+
 type PollBase struct {
     events []syscall.Kevent_t
+}
+
+func addPollEvent(p, fd int, masks uint32) (err error) {
+    if masks&EventRead == EventRead {
+        _, err = syscall.Kevent(p, []syscall.Kevent_t{{
+            Ident:  uint64(fd),
+            Flags:  syscall.EV_ADD,
+            Filter: syscall.EVFILT_READ}}, nil, nil)
+    }
+    if masks&EventWrite == EventWrite {
+        _, err = syscall.Kevent(p, []syscall.Kevent_t{{
+            Ident:  uint64(fd),
+            Flags:  syscall.EV_ADD,
+            Filter: syscall.EVFILT_WRITE}}, nil, nil)
+    }
+
+    return
+}
+
+func deletePollEvent(p, fd int, masks uint32) (err error) {
+    if masks&EventRead == EventRead {
+        _, err = syscall.Kevent(p, []syscall.Kevent_t{{
+            Ident:  uint64(fd),
+            Flags:  syscall.EV_DELETE,
+            Filter: syscall.EVFILT_READ}}, nil, nil)
+    }
+    if masks&EventWrite == EventWrite {
+        _, err = syscall.Kevent(p, []syscall.Kevent_t{{
+            Ident:  uint64(fd),
+            Flags:  syscall.EV_DELETE,
+            Filter: syscall.EVFILT_WRITE}}, nil, nil)
+    }
+
+    return
 }
 
 func AddRead(p, fd int, readon, writeon *bool) error {
@@ -90,7 +131,7 @@ func GetFD(evs interface{}, i int) int {
     return int(evs.([]syscall.Kevent_t)[i].Ident)
 }
 
-func closePoll(p int) (err error){
+func closePoll(p int) (err error) {
     return syscall.Close(p)
 }
 

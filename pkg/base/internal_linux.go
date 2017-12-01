@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+const (
+	evListen = uint32((syscall.EPOLLET | syscall.EPOLLIN | syscall.EPOLLRDHUP) & 0xffffffff)
+	evClient = uint32((syscall.EPOLLET | syscall.EPOLLIN | syscall.EPOLLOUT | syscall.EPOLLRDHUP) & 0xffffffff)
+	evRead   = uint32((syscall.EPOLLIN | syscall.EPOLLRDHUP | syscall.EPOLLERR) & 0xffffffff)
+	evWrite  = uint32((syscall.EPOLLOUT | syscall.EPOLLHUP | syscall.EPOLLERR) & 0xffffffff)
+)
+
 func AddRead(p, fd int, readon, writeon *bool) error {
 	if readon != nil {
 		if *readon {

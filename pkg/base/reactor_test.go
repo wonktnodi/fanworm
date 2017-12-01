@@ -28,9 +28,25 @@ func TestReactorOpenClose(t *testing.T) {
     assert.Nil(t, reactor.eventsMgr, "events mgr clear")
 }
 
-func TestReactorRegister(t *testing.T) {
+func TestReactorListener(t *testing.T) {
     reactor, err := NewPollReactor()
     assert.Equal(t, nil, err)
+
+    addr := "tcp://:9999"
+    network, inetAddr, stdlib := parseAddr(addr)
+    assert.Equal(t, "tcp", network, "check addr parse")
+    assert.Equal(t, ":9999", inetAddr, "check addr parse")
+    assert.Equal(t, false, stdlib, "check addr parse")
+
+    acceptor := NewTcpAcceptor()
+    assert.NotNil(t, acceptor, "create TCP acceptor")
+    err = acceptor.Open(addr)
+    assert.Nil(t, err, "open TCP acceptor")
+
+
+    acceptor.Close()
+
+
     reactor.Close()
 }
 
@@ -52,8 +68,7 @@ func TestReactorTimer(t *testing.T) {
     assert.Nil(t, err, "reactor cancel timer")
     assert.Equal(t, 0, reactor.timerQueue.Len(), "reactor cancel timer")
 
-
-    timerID, err = reactor.SetTimer(ev, int64(1 * time.Second), nil)
+    timerID, err = reactor.SetTimer(ev, int64(1*time.Second), nil)
     assert.Equal(t, uint64(2), timerID, "reactor set timer")
     reactor.Start()
 
@@ -68,11 +83,8 @@ func TestReactorTimeout(t *testing.T) {
     assert.Nil(t, err, "reactor timer timeout")
 
     var ev TestEventHandler
-    timerID, err := reactor.SetTimer(ev, int64(1 * time.Second), nil)
+    timerID, err := reactor.SetTimer(ev, int64(1*time.Second), nil)
     assert.NotEqual(t, int64(0), timerID, "reactor timer timeout")
-
-
-
 
     reactor.Close()
 }

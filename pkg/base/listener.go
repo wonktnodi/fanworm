@@ -4,6 +4,7 @@ import (
     "net"
     "os"
     "syscall"
+    "github.com/wonktnodi/go-revolver/pkg/log"
 )
 
 type listener struct {
@@ -48,4 +49,49 @@ func (ln *listener) system() error {
     }
     ln.fd = int(ln.f.Fd())
     return syscall.SetNonblock(ln.fd, true)
+}
+
+type TcpListener struct {
+    acceptor *TcpAcceptor
+}
+
+func (l *TcpListener) Open(reactor Reactor, addr string) (err error) {
+    acceptor := NewTcpAcceptor()
+    if acceptor == nil {
+        log.Errorf("failed to create acceptor")
+        return
+    }
+    err = acceptor.Open(addr)
+    if err != nil {
+        return err
+    }
+    l.acceptor = acceptor
+
+    // register events
+    //err = reactor.AddEventHandler(l)
+    return
+}
+
+func (l *TcpListener) HandleInput(fd int) (err error) {
+    return
+}
+
+func (l *TcpListener) HandleOutput(fd int) (err error) {
+    return
+}
+
+func (l *TcpListener) HandleException(fd int) (err error) {
+    return
+}
+
+func (l *TcpListener) HandleTimeout(id uint64) (err error) {
+    return
+}
+
+func (l *TcpListener) GetHandle() int {
+    return l.acceptor.GetFD()
+}
+
+func (l *TcpListener) GetID() int {
+    return 0
 }

@@ -10,10 +10,17 @@ import (
     "sync"
 )
 
+const (
+    EventRead    = uint32(1 << 1)
+    EventWrite   = uint32(1 << 2)
+    EventTimeout = uint32(1 << 3)
+    EventError   = uint32(1 << 4)
+)
+
 type Reactor interface {
-    AddEventHandler(handler *EventHandler) (err error)
-    RemoveEventHandler(handler *EventHandler) (err error)
-    DeleteEventHandler(handler *EventHandler) (err error)
+    AddEventHandler(handler EventHandler, masks uint32) (err error)
+    RemoveEventHandler(handler EventHandler, masks uint32) (err error)
+    DeleteEventHandler(handler EventHandler, masks uint32) (err error)
     Open() (err error)
     Close()
     EventLoop()
@@ -145,16 +152,16 @@ func (r *PollReactor) EventLoop() {
     return
 }
 
-func (r *PollReactor) AddEventHandler(handler *EventHandler) (err error) {
+func (r *PollReactor) AddEventHandler(handler EventHandler, masks uint32) (err error) {
+    return addPollEvent(r.pollerFD, handler.GetHandle(), masks)
+}
+
+func (r *PollReactor) RemoveEventHandler(handler EventHandler, masks uint32) (err error) {
     return
 }
 
-func (r *PollReactor) RemoveEventHandler(handler *EventHandler) (err error) {
-    return
-}
-
-func (r *PollReactor) DeleteEventHandler(handler *EventHandler) (err error) {
-    return
+func (r *PollReactor) DeleteEventHandler(handler EventHandler, masks uint32) (err error) {
+    return deletePollEvent(r.pollerFD, handler.GetHandle(), masks)
 }
 
 func (r *PollReactor) SetTimer(ev EventHandler, delay int64, data interface{}) (id uint64, err error) {
