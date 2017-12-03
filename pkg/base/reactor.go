@@ -8,6 +8,7 @@ import (
     "syscall"
     "github.com/wonktnodi/go-revolver/pkg"
     "sync"
+    "fmt"
 )
 
 const (
@@ -87,7 +88,7 @@ func (r *PollReactor) Open() (err error) {
     }
     r.createEvents(128)
     r.timerID = 1
-    r.defaultWaitInterval = pkg.MinReactorLoopInterval
+    r.defaultWaitInterval = pkg.MinReactorLoopInterval * 1000
     r.exitFlag = 0
     return
 }
@@ -120,9 +121,10 @@ func (r *PollReactor) EventLoop() {
         if err != nil && err != syscall.EINTR {
             break
         }
+        fmt.Println("got event cnt: ", pn)
         // event processing
         for i := 0; i < pn; i ++ {
-
+            fmt.Println("got event")
         }
 
         // check exit flag

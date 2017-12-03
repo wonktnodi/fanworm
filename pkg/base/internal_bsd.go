@@ -111,6 +111,10 @@ func DelWrite(p, fd int, readon, writeon *bool) error {
     return err
 }
 
+func MakePoll() (p int, err error) {
+    return syscall.Kqueue()
+}
+
 func CreatePoll() (p int, err error) {
     return syscall.Kqueue()
 }

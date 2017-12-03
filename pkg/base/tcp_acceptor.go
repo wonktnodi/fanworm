@@ -40,15 +40,9 @@ func (ln *TcpAcceptor) Open(addr string) (err error) {
         return err
     }
     ln.inetAddr = ln.ln.Addr()
-    if ln.f != nil {
-        ln.f.Close()
-    }
-    if ln.ln != nil {
-        ln.ln.Close()
-    }
-    if ln.network == "unix" {
-        os.RemoveAll(ln.addr)
-    }
+
+    // register events
+
     return
 }
 

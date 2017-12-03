@@ -38,14 +38,17 @@ func TestReactorListener(t *testing.T) {
     assert.Equal(t, ":9999", inetAddr, "check addr parse")
     assert.Equal(t, false, stdlib, "check addr parse")
 
-    acceptor := NewTcpAcceptor()
+    acceptor := NewTcpListener()
     assert.NotNil(t, acceptor, "create TCP acceptor")
-    err = acceptor.Open(addr)
+    err = acceptor.Open(reactor, addr)
     assert.Nil(t, err, "open TCP acceptor")
 
+    reactor.Start()
+
+    time.Sleep(time.Minute)
 
     acceptor.Close()
-
+    time.Sleep(time.Minute)
 
     reactor.Close()
 }

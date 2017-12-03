@@ -55,6 +55,11 @@ type TcpListener struct {
     acceptor *TcpAcceptor
 }
 
+func NewTcpListener() (l *TcpListener) {
+    l = &TcpListener{}
+    return
+}
+
 func (l *TcpListener) Open(reactor Reactor, addr string) (err error) {
     acceptor := NewTcpAcceptor()
     if acceptor == nil {
@@ -69,8 +74,17 @@ func (l *TcpListener) Open(reactor Reactor, addr string) (err error) {
 
     // register events
     //err = reactor.AddEventHandler(l)
+    reactor.AddEventHandler(l, EventRead)
     return
 }
+
+func (l *TcpListener) Close() {
+    if l.acceptor != nil {
+        l.acceptor.Close()
+        l.acceptor = nil
+    }
+}
+
 
 func (l *TcpListener) HandleInput(fd int) (err error) {
     return
