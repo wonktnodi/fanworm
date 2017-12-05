@@ -12,10 +12,14 @@ import (
 
 type PollingReactor struct {
     PollBase
-    fdconn map[int]*connection
-    idconn map[int]*connection
-    lns    []*listener
-    stdlib bool
+    fdconn       map[int]*connection
+    idconn       map[int]*connection
+    lns          []*listener
+    stdlib       bool
+    timeoutqueue *TimeoutQueue
+    mu           sync.Mutex
+    done         bool
+    id           int
 }
 
 func NewReactor() (inst *PollingReactor) {
@@ -66,6 +70,11 @@ func (r *PollingReactor) Open() (err error) {
     }
     r.p = p
     makeEvents(&r.PollBase, 64)
+
+    r.fdconn = make(map[int]*connection)
+    r.idconn = make(map[int]*connection)
+
+    r.timeoutqueue = NewTimeoutQueue()
     return
 }
 
@@ -86,114 +95,17 @@ func (r *PollingReactor) Serve(events Events, addrs ...string) (err error) {
     return r.serve(events, r.lns)
 }
 
+func (r *PollingReactor) lock() {
+    r.mu.Lock()
+}
+
+func (r *PollingReactor) unlock() {
+    r.mu.Unlock()
+}
+
 func (r *PollingReactor) serve(events Events, lns []*listener) error {
-    var mu sync.Mutex
-    var done bool
-    lock := func() { mu.Lock() }
-    unlock := func() { mu.Unlock() }
-    r.fdconn = make(map[int]*connection)
-    r.idconn = make(map[int]*connection)
-    timeoutqueue := NewTimeoutQueue()
-    var id int
-    dial := func(addr string, timeout time.Duration) int {
-        lock()
-        if done {
-            unlock()
-            return 0
-        }
-        id++
-        c := &connection{id: id, opening: true, lnidx: -1}
-        r.idconn[id] = c
-        if timeout != 0 {
-            c.timeout = time.Now().Add(timeout)
-            timeoutqueue.Push(c)
-        }
-        unlock()
-        // resolving an address blocks and we don't want blocking, like ever.
-        // but since we're leaving the event loop we'll need to complete the
-        // socket connection in a goroutine and add the read and write events
-        // to the loop to get back into the loop.
-        go func() {
-            err := func() error {
-                sa, err := resolve(addr)
-                if err != nil {
-                    return err
-                }
-                var fd int
-                switch sa.(type) {
-                case *syscall.SockaddrUnix:
-                    fd, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-                case *syscall.SockaddrInet4:
-                    fd, err = syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
-                case *syscall.SockaddrInet6:
-                    fd, err = syscall.Socket(syscall.AF_INET6, syscall.SOCK_STREAM, 0)
-                }
-                if err != nil {
-                    return err
-                }
-                err = syscall.Connect(fd, sa)
-                if err != nil && err != syscall.EINPROGRESS {
-                    syscall.Close(fd)
-                    return err
-                }
-                if err := syscall.SetNonblock(fd, true); err != nil {
-                    syscall.Close(fd)
-                    return err
-                }
-                lock()
-                err = base.AddRead(r.p, fd, &c.readon, &c.writeon)
-                if err != nil {
-                    unlock()
-                    syscall.Close(fd)
-                    return err
-                }
-                err = base.AddWrite(r.p, fd, &c.readon, &c.writeon)
-                if err != nil {
-                    unlock()
-                    syscall.Close(fd)
-                    return err
-                }
-                c.fd = fd
-                r.fdconn[fd] = c
-                unlock()
-                return nil
-            }()
-            if err != nil {
-                // set a dial error and timeout right away
-                lock()
-                c.dialerr = err
-                c.timeout = time.Now()
-                timeoutqueue.Push(c)
-                unlock()
-            }
-
-        }()
-        return id
-    }
-
     // wake wakes up a connection
-    wake := func(id int) bool {
-        var ok = true
-        var err error
-        lock()
-        if done {
-            unlock()
-            return false
-        }
-        c := r.idconn[id]
-        if c == nil || c.fd == 0 {
-            ok = false
-        } else if !c.wake {
-            c.wake = true
-            err = base.AddWrite(r.p, c.fd, &c.readon, &c.writeon)
-        }
-        unlock()
-        if err != nil {
-            panic(err)
-        }
-        return ok
-    }
-    ctx := Server{Wake: wake, Dial: dial}
+    ctx := Server{Wake: r.wake, Dial: r.dail}
     ctx.Addrs = make([]net.Addr, len(lns))
     for i, ln := range lns {
         ctx.Addrs[i] = ln.naddr
@@ -205,53 +117,8 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
         }
     }
     // cleaning work
-    defer func() {
-        lock()
-        done = true
-        type fdid struct {
-            fd, id  int
-            opening bool
-            laddr   net.Addr
-            raddr   net.Addr
-            lnidx   int
-        }
-        var fdids []fdid
-        for _, c := range r.idconn {
-            if c.opening {
-                genAddrs(c)
-            }
-            fdids = append(fdids, fdid{c.fd, c.id, c.opening, c.laddr, c.raddr, c.lnidx})
-        }
-        sort.Slice(fdids, func(i, j int) bool {
-            return fdids[j].id < fdids[i].id
-        })
-        for _, fdid := range fdids {
-            if fdid.fd != 0 {
-                syscall.Close(fdid.fd)
-            }
-            if fdid.opening {
-                if events.Opened != nil {
-                    unlock()
-                    events.Opened(fdid.id, Info{
-                        Closing:    true,
-                        AddrIndex:  fdid.lnidx,
-                        LocalAddr:  fdid.laddr,
-                        RemoteAddr: fdid.raddr,
-                    })
-                    lock()
-                }
-            }
-            if events.Closed != nil {
-                unlock()
-                events.Closed(fdid.id, nil)
-                lock()
-            }
-        }
-        syscall.Close(r.p)
-        r.fdconn = nil
-        r.idconn = nil
-        unlock()
-    }()
+    defer r.clean(events)
+
     var rsa syscall.Sockaddr
 
     var packet [0xFFFF]byte
@@ -283,17 +150,17 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             nextTicker = time.Now().Add(tickerDelay + remain)
         }
         // check for dial connection timeouts
-        if timeoutqueue.Len() > 0 {
+        if r.timeoutqueue.Len() > 0 {
             var count int
             now := time.Now()
             for {
-                v := timeoutqueue.Peek()
+                v := r.timeoutqueue.Peek()
                 if v == nil {
                     break
                 }
                 c := v.(*connection)
                 if now.After(v.Timeout()) {
-                    timeoutqueue.Pop()
+                    r.timeoutqueue.Pop()
                     if _, ok := r.idconn[c.id]; ok && c.opening {
                         delete(r.idconn, c.id)
                         delete(r.fdconn, c.fd)
@@ -325,7 +192,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                 continue
             }
         }
-        lock()
+        r.lock()
         for i := 0; i < pn; i++ {
             var in []byte
             var c *connection
@@ -358,8 +225,8 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             if err = syscall.SetNonblock(nfd, true); err != nil {
                 goto fail
             }
-            id++
-            c = &connection{id: id, fd: nfd,
+            r.id++
+            c = &connection{id: r.id, fd: nfd,
                 opening: true,
                 lnidx: lnidx,
                 raddr: sockaddrToAddr(rsa),
@@ -369,7 +236,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                 goto fail
             }
             r.fdconn[nfd] = c
-            r.idconn[id] = c
+            r.idconn[r.id] = c
             goto next
         opened:
             genAddrs(c)
@@ -377,13 +244,13 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                 goto fail
             }
             if events.Opened != nil {
-                unlock()
+                r.unlock()
                 out, c.opts, c.action = events.Opened(c.id, Info{
                     AddrIndex:  lnidx,
                     LocalAddr:  c.laddr,
                     RemoteAddr: c.raddr,
                 })
-                lock()
+                r.lock()
                 if c.opts.TCPKeepAlive > 0 {
                     base.SetKeepAlive(c.fd, int(c.opts.TCPKeepAlive/time.Second))
                 }
@@ -419,9 +286,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             // 	c.laddr = sock
             // }
             if events.Data != nil {
-                unlock()
+                r.unlock()
                 out, c.action = events.Data(c.id, in)
-                lock()
+                r.lock()
             }
             if len(out) > 0 {
                 c.outbuf = append(c.outbuf, out...)
@@ -430,9 +297,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
         write:
             if len(c.outbuf)-c.outpos > 0 {
                 if events.Prewrite != nil {
-                    unlock()
+                    r.unlock()
                     action := events.Prewrite(c.id, len(c.outbuf[c.outpos:]))
-                    lock()
+                    r.lock()
                     if action == Shutdown {
                         c.action = Shutdown
                     }
@@ -443,9 +310,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                     if amount < 0 {
                         amount = 0
                     }
-                    unlock()
+                    r.unlock()
                     action := events.Postwrite(c.id, amount, len(c.outbuf)-c.outpos-amount)
-                    lock()
+                    r.lock()
                     if action == Shutdown {
                         c.action = Shutdown
                     }
@@ -500,9 +367,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                     }
                     c.outpos = 0
                     syscall.SetNonblock(c.fd, false)
-                    unlock()
+                    r.unlock()
                     c.action = events.Detached(c.id, c)
-                    lock()
+                    r.lock()
                     if c.action == Shutdown {
                         goto fail
                     }
@@ -511,9 +378,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             }
             syscall.Close(c.fd)
             if events.Closed != nil {
-                unlock()
+                r.unlock()
                 action := events.Closed(c.id, c.err)
-                lock()
+                r.lock()
                 if action == Shutdown {
                     c.action = Shutdown
                 }
@@ -524,10 +391,156 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             }
             goto next
         fail:
-            unlock()
+            r.unlock()
             return err
         next:
         }
-        unlock()
+        r.unlock()
     }
+}
+
+func (r *PollingReactor) dail (addr string, timeout time.Duration) int {
+    r.lock()
+    if r.done {
+        r.unlock()
+        return 0
+    }
+    r.id++
+    c := &connection{id: r.id, opening: true, lnidx: -1}
+    r.idconn[r.id] = c
+    if timeout != 0 {
+        c.timeout = time.Now().Add(timeout)
+        r.timeoutqueue.Push(c)
+    }
+    r.unlock()
+    // resolving an address blocks and we don't want blocking, like ever.
+    // but since we're leaving the event loop we'll need to complete the
+    // socket connection in a goroutine and add the read and write events
+    // to the loop to get back into the loop.
+    go func() {
+        err := func() error {
+            sa, err := resolve(addr)
+            if err != nil {
+                return err
+            }
+            var fd int
+            switch sa.(type) {
+            case *syscall.SockaddrUnix:
+                fd, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+            case *syscall.SockaddrInet4:
+                fd, err = syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+            case *syscall.SockaddrInet6:
+                fd, err = syscall.Socket(syscall.AF_INET6, syscall.SOCK_STREAM, 0)
+            }
+            if err != nil {
+                return err
+            }
+            err = syscall.Connect(fd, sa)
+            if err != nil && err != syscall.EINPROGRESS {
+                syscall.Close(fd)
+                return err
+            }
+            if err := syscall.SetNonblock(fd, true); err != nil {
+                syscall.Close(fd)
+                return err
+            }
+            r.lock()
+            err = base.AddRead(r.p, fd, &c.readon, &c.writeon)
+            if err != nil {
+                r.unlock()
+                syscall.Close(fd)
+                return err
+            }
+            err = base.AddWrite(r.p, fd, &c.readon, &c.writeon)
+            if err != nil {
+                r.unlock()
+                syscall.Close(fd)
+                return err
+            }
+            c.fd = fd
+            r.fdconn[fd] = c
+            r.unlock()
+            return nil
+        }()
+        if err != nil {
+            // set a dial error and timeout right away
+            r.lock()
+            c.dialerr = err
+            c.timeout = time.Now()
+            r.timeoutqueue.Push(c)
+            r.unlock()
+        }
+
+    }()
+    return r.id
+}
+
+func (r *PollingReactor) wake(id int) bool {
+    var ok = true
+    var err error
+    r.lock()
+    if r.done {
+        r.unlock()
+        return false
+    }
+    c := r.idconn[id]
+    if c == nil || c.fd == 0 {
+        ok = false
+    } else if !c.wake {
+        c.wake = true
+        err = base.AddWrite(r.p, c.fd, &c.readon, &c.writeon)
+    }
+    r.unlock()
+    if err != nil {
+        panic(err)
+    }
+    return ok
+}
+
+func (r *PollingReactor) clean(events Events) {
+    r.lock()
+    r.done = true
+    type fdid struct {
+        fd, id  int
+        opening bool
+        laddr   net.Addr
+        raddr   net.Addr
+        lnidx   int
+    }
+    var fdids []fdid
+    for _, c := range r.idconn {
+        if c.opening {
+            genAddrs(c)
+        }
+        fdids = append(fdids, fdid{c.fd, c.id, c.opening, c.laddr, c.raddr, c.lnidx})
+    }
+    sort.Slice(fdids, func(i, j int) bool {
+        return fdids[j].id < fdids[i].id
+    })
+    for _, fdid := range fdids {
+        if fdid.fd != 0 {
+            syscall.Close(fdid.fd)
+        }
+        if fdid.opening {
+            if events.Opened != nil {
+                r.unlock()
+                events.Opened(fdid.id, Info{
+                    Closing:    true,
+                    AddrIndex:  fdid.lnidx,
+                    LocalAddr:  fdid.laddr,
+                    RemoteAddr: fdid.raddr,
+                })
+                r.lock()
+            }
+        }
+        if events.Closed != nil {
+            r.unlock()
+            events.Closed(fdid.id, nil)
+            r.lock()
+        }
+    }
+    syscall.Close(r.p)
+    r.fdconn = nil
+    r.idconn = nil
+    r.unlock()
 }
