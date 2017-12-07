@@ -19,7 +19,6 @@ type PollingReactor struct {
     timeoutqueue *TimeoutQueue
     mu           sync.Mutex
     done         bool
-    id           int
 }
 
 func NewReactor() (inst *PollingReactor) {
@@ -209,6 +208,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             }
             ln = nil
             c = r.fdconn[fd]
+            c = connMgr.GetConnection(fd)
             if c == nil {
                 syscall.Close(fd)
                 goto next
@@ -225,8 +225,8 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             if err = syscall.SetNonblock(nfd, true); err != nil {
                 goto fail
             }
-            r.id++
-            c = &connection{id: r.id, fd: nfd,
+
+            c = &connection{id: connMgr.GetID(), fd: nfd,
                 opening: true,
                 lnidx: lnidx,
                 raddr: sockaddrToAddr(rsa),
@@ -235,8 +235,9 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             if err = base.AddWrite(r.p, c.fd, &c.readon, &c.writeon); err != nil {
                 goto fail
             }
+            connMgr.AddConnection(c)
             r.fdconn[nfd] = c
-            r.idconn[r.id] = c
+            r.idconn[c.id] = c
             goto next
         opened:
             genAddrs(c)
@@ -357,6 +358,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
         close:
             delete(r.fdconn, c.fd)
             delete(r.idconn, c.id)
+            connMgr.RemoveConnection(c)
             if c.action == Detach {
                 if events.Detached != nil {
                     c.detached = true
@@ -405,9 +407,8 @@ func (r *PollingReactor) dail(addr string, timeout time.Duration) int {
         r.unlock()
         return 0
     }
-    r.id++
-    c := &connection{id: r.id, opening: true, lnidx: -1}
-    r.idconn[r.id] = c
+    c := &connection{id: connMgr.GetID(), opening: true, lnidx: -1}
+    r.idconn[c.id] = c
     if timeout != 0 {
         c.timeout = time.Now().Add(timeout)
         r.timeoutqueue.Push(c)
@@ -470,9 +471,8 @@ func (r *PollingReactor) dail(addr string, timeout time.Duration) int {
             r.timeoutqueue.Push(c)
             r.unlock()
         }
-
     }()
-    return r.id
+    return c.id
 }
 
 func (r *PollingReactor) wake(id int) bool {

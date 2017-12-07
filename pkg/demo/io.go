@@ -205,6 +205,29 @@ func parseAddr(addr string) (network, address string, stdlib bool) {
     return
 }
 
+//func (l *listener) Accept(fd int) (conn *connection, err error) {
+//    nfd, rsa, err := syscall.Accept(fd)
+//    if err != nil {
+//        return
+//    }
+//    if err = syscall.SetNonblock(nfd, true); err != nil {
+//        return
+//    }
+//
+//    r.id++
+//    c = &connection{id: r.id, fd: nfd,
+//        opening: true,
+//        lnidx: lnidx,
+//        raddr: sockaddrToAddr(rsa),
+//    }
+//    // we have a remote address but the local address yet.
+//    if err = base.AddWrite(r.p, c.fd, &c.readon, &c.writeon); err != nil {
+//        goto fail
+//    }
+//    r.fdconn[nfd] = c
+//    r.idconn[r.id] = c
+//}
+
 func (l *listener) HandleInput(fd int) (err error) {
     return
 }

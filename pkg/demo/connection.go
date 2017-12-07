@@ -77,6 +77,10 @@ func (c *connection) Close() error {
     return err
 }
 
+func (c *connection) GetFd() int {
+    return c.fd
+}
+
 func genAddrs(c *connection) {
     if c.laddr == nil {
         sa, _ := syscall.Getsockname(c.fd)
@@ -86,4 +90,42 @@ func genAddrs(c *connection) {
         sa, _ := syscall.Getsockname(c.fd)
         c.raddr = sockaddrToAddr(sa)
     }
+}
+
+type ConnectionMgr struct {
+    fdconn map[int]*connection
+    idconn map[int]*connection
+    id     int
+}
+
+var connMgr = NewConnectionMgr()
+
+func NewConnectionMgr() (m *ConnectionMgr) {
+    m = &ConnectionMgr{}
+    return
+}
+
+func (m *ConnectionMgr) GetID() int {
+    m.id ++
+    return m.id
+}
+
+func (m *ConnectionMgr) AddConnection(c *connection) {
+    m.idconn[c.id] = c
+    m.fdconn[c.fd] = c
+}
+
+func (m *ConnectionMgr) RemoveConnection(c *connection) {
+    delete(m.fdconn, c.fd)
+    delete(m.idconn, c.id)
+}
+
+func (m *ConnectionMgr) GetConnection(fd int) (c *connection) {
+    c = m.fdconn[fd]
+    return c
+}
+
+func (m *ConnectionMgr) GetConnectionByID(id int) (c *connection) {
+    c = m.idconn[id]
+    return c
 }
