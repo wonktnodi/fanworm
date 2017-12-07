@@ -12,3 +12,7 @@ type PollBase struct {
 func makeEvents(p *PollBase, n int) {
     p.events = make([]syscall.Kevent_t, n)
 }
+
+func getFD(p *PollBase, idx int) int {
+    return int(p.events[idx].Ident)
+}

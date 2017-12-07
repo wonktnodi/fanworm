@@ -56,7 +56,7 @@ func (r *PollingReactor) parseAddr(addr ...string) (err error) {
 
     // add event accept event monitoring
     for _, ln := range r.lns {
-        if err := base.AddRead(r.p, ln.fd, nil, nil); err != nil {
+        if err := r.registerEventHandler(ln, EventRead); err != nil {
             return err
         }
     }
@@ -201,7 +201,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             var out []byte
             var ln *listener
             var lnidx int
-            var fd = base.GetFD(r.events, i)
+            var fd = getFD(&r.PollBase, i)
             for lnidx, ln = range lns {
                 if fd == ln.fd {
                     goto accept
@@ -399,7 +399,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
     }
 }
 
-func (r *PollingReactor) dail (addr string, timeout time.Duration) int {
+func (r *PollingReactor) dail(addr string, timeout time.Duration) int {
     r.lock()
     if r.done {
         r.unlock()

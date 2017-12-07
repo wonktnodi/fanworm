@@ -204,3 +204,27 @@ func parseAddr(addr string) (network, address string, stdlib bool) {
     }
     return
 }
+
+func (l *listener) HandleInput(fd int) (err error) {
+    return
+}
+
+func (l *listener) HandleOutput(fd int) (err error) {
+    return
+}
+
+func (l *listener) HandleException(fd int) (err error) {
+    return
+}
+
+func (l *listener) HandleTimeout(id uint64) (err error) {
+    return
+}
+
+func (l *listener) GetHandle() int {
+    return l.fd
+}
+
+func (l *listener) GetID() int {
+    return int(0)
+}
