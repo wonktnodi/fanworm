@@ -6,32 +6,14 @@ import (
     "syscall"
 )
 
-// Action is an action that occurs after the completion of an event.
-type Action int
-
-const (
-    // None indicates that no action should occur following an event.
-    None Action = iota
-    // Detach detaches the client.
-    Detach
-    // Close closes the client.
-    Close
-    // Shutdown shutdowns the server.
-    Shutdown
-)
-
-// Options are set when the client opens.
-type Options struct {
-    // TCPKeepAlive (SO_KEEPALIVE) socket option.
-    TCPKeepAlive time.Duration
-}
-
-type unixConn struct {
+// unixConn represents the connection as the event loop sees it.
+// This is also becomes a detached connection.
+type connection struct {
     id, fd   int
     outbuf   []byte
     outpos   int
-    action   Action
-    opts     Options
+    //action   Action
+    //opts     Options
     timeout  time.Time
     raddr    net.Addr // remote addr
     laddr    net.Addr // local addr
@@ -46,19 +28,13 @@ type unixConn struct {
     opening  bool
 }
 
-func (c *unixConn) Timeout() time.Time {
+func (c *connection) Timeout() time.Time {
     return c.timeout
 }
-
-func (c *unixConn) TimerID() uint64 {
-    return 0
-}
-
-func (c *unixConn) Read(p []byte) (n int, err error) {
+func (c *connection) Read(p []byte) (n int, err error) {
     return syscall.Read(c.fd, p)
 }
-
-func (c *unixConn) Write(p []byte) (n int, err error) {
+func (c *connection) Write(p []byte) (n int, err error) {
     if c.detached {
         if len(c.outbuf) > 0 {
             for len(c.outbuf) > 0 {
@@ -91,7 +67,7 @@ func (c *unixConn) Write(p []byte) (n int, err error) {
     return syscall.Write(c.fd, p)
 }
 
-func (c *unixConn) Close() error {
+func (c *connection) Close() error {
     if c.closed {
         return syscall.EINVAL
     }
@@ -101,35 +77,49 @@ func (c *unixConn) Close() error {
     return err
 }
 
-func sockaddrToAddr(sa syscall.Sockaddr) net.Addr {
-    var a net.Addr
-    switch sa := sa.(type) {
-    case *syscall.SockaddrInet4:
-        a = &net.TCPAddr{
-            IP:   append([]byte{}, sa.Addr[:]...),
-            Port: sa.Port,
-        }
-    case *syscall.SockaddrInet6:
-        var zone string
-        if sa.ZoneId != 0 {
-            if ifi, err := net.InterfaceByIndex(int(sa.ZoneId)); err == nil {
-                zone = ifi.Name
-            }
-        }
-        if zone == "" && sa.ZoneId != 0 {
-        }
-        a = &net.TCPAddr{
-            IP:   append([]byte{}, sa.Addr[:]...),
-            Port: sa.Port,
-            Zone: zone,
-        }
-    case *syscall.SockaddrUnix:
-        a = &net.UnixAddr{Net: "unix", Name: sa.Name}
-    }
-    return a
+func (c *connection) GetFd() int {
+    return c.fd
 }
 
-func filladdrs(c *unixConn) {
+func (c *connection) HandleInput(fd int) (err error) {
+    var packet [1024]byte
+    n, err := syscall.Read(fd, packet[:])
+
+    if n == 0 || err != nil {
+        if err == syscall.EAGAIN {
+            return
+        }
+        //c.err = err
+        //goto close
+    }
+    n, err = syscall.Write(fd, packet[:n])
+
+    return
+}
+
+func (c *connection) HandleOutput(fd int)  (err error) {
+    ReactorInstance().RemoveEventHandler(c, kWriteEvent)
+    ReactorInstance().AddEventHandler(c, kReadEvent)
+    return
+}
+
+func (c *connection) HandleException(fd int)  (err error) {
+    return
+}
+
+func (c *connection) HandleTimeout(id uint64)  (err error) {
+    return
+}
+
+func (c *connection) GetHandle() int {
+    return c.fd
+}
+
+func (c *connection) GetID() int {
+    return c.id
+}
+
+func genAddrs(c *connection) {
     if c.laddr == nil {
         sa, _ := syscall.Getsockname(c.fd)
         c.laddr = sockaddrToAddr(sa)
@@ -140,35 +130,46 @@ func filladdrs(c *unixConn) {
     }
 }
 
-type Connection struct {
-    id, fd  int
-    outbuf  []byte
-    outpos  int
-    action  Action
-    opts    Options
-    raddr   net.Addr // remote addr
-    laddr   net.Addr // local addr
-    lnidx   int
-    err     error
-    dialerr error
+type ConnectionMgr struct {
+    fdconn map[int]*connection
+    idconn map[int]*connection
+    id     int
 }
 
-func (c *Connection) HandleInput(fd int) (err error) {
+var connMgr = NewConnectionMgr()
+
+func NewConnectionMgr() (m *ConnectionMgr) {
+    m = &ConnectionMgr{
+        fdconn: map[int]*connection{},
+        idconn: map[int]*connection{},
+    }
     return
 }
 
-func (c *Connection) HandleOutput(fd int) (err error) {
-    return
+func (m *ConnectionMgr) GetID() int {
+    m.id ++
+    return m.id
 }
 
-func (c *Connection) HandleException(id uint64) (err error) {
-    return
+func (m *ConnectionMgr) AddConnection(c *connection) {
+    m.idconn[c.id] = c
+    if c.fd != 0 {
+        m.fdconn[c.fd] = c
+    }
 }
 
-func (c *Connection) HandleTimeout(id uint64) (err error) {
-    return
+func (m *ConnectionMgr) RemoveConnection(c *connection) {
+    delete(m.fdconn, c.fd)
+    delete(m.idconn, c.id)
 }
 
-func (c *Connection) GetID() (id int) {
-    return
+func (m *ConnectionMgr) GetConnection(fd int) (c *connection) {
+    c = m.fdconn[fd]
+    return c
 }
+
+func (m *ConnectionMgr) GetConnectionByID(id int) (c *connection) {
+    c = m.idconn[id]
+    return c
+}
+

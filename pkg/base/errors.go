@@ -5,6 +5,7 @@ import "fmt"
 const (
     ErrCodeNotImplement    = 1
     ErrCodeNotInvalidParam = 2
+    ErrCodeAllocateObject  = 3
     ErrCodeNotFound        = 10
 )
 

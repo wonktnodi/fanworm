@@ -20,13 +20,10 @@ func NewTcpAcceptor() (a *TcpAcceptor) {
     return
 }
 
-func (ln *TcpAcceptor) GetFD() int {
-    return ln.fd
-}
-
 func (ln *TcpAcceptor) Open(addr string) (err error) {
     //var stdlib bool
-    ln.network, ln.addr, _ = parseAddr(addr)
+    var stdlib bool
+    ln.network, ln.addr, stdlib = parseAddr(addr)
     if ln.fd != 0 {
         syscall.Close(ln.fd)
     }
@@ -40,8 +37,11 @@ func (ln *TcpAcceptor) Open(addr string) (err error) {
         return err
     }
     ln.inetAddr = ln.ln.Addr()
-
-    // register events
+    if !stdlib {
+        if err := ln.system(); err != nil {
+            return err
+        }
+    }
 
     return
 }
@@ -77,3 +77,5 @@ func (ln *TcpAcceptor) Close() {
         os.RemoveAll(ln.addr)
     }
 }
+
+
