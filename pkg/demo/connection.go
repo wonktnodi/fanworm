@@ -81,6 +81,30 @@ func (c *connection) GetFd() int {
     return c.fd
 }
 
+func (c *connection) HandleInput(fd int) (err error) {
+    return
+}
+
+func (c *connection) HandleOutput(fd int)  (err error) {
+    return
+}
+
+func (c *connection) HandleException(fd int)  (err error) {
+    return
+}
+
+func (c *connection) HandleTimeout(id uint64)  (err error) {
+    return
+}
+
+func (c *connection) GetHandle() int {
+    return c.fd
+}
+
+func (c *connection) GetID() int {
+    return c.id
+}
+
 func genAddrs(c *connection) {
     if c.laddr == nil {
         sa, _ := syscall.Getsockname(c.fd)
@@ -101,7 +125,10 @@ type ConnectionMgr struct {
 var connMgr = NewConnectionMgr()
 
 func NewConnectionMgr() (m *ConnectionMgr) {
-    m = &ConnectionMgr{}
+    m = &ConnectionMgr{
+        fdconn: map[int]*connection{},
+        idconn: map[int]*connection{},
+    }
     return
 }
 
@@ -112,7 +139,9 @@ func (m *ConnectionMgr) GetID() int {
 
 func (m *ConnectionMgr) AddConnection(c *connection) {
     m.idconn[c.id] = c
-    m.fdconn[c.fd] = c
+    if c.fd != 0 {
+        m.fdconn[c.fd] = c
+    }
 }
 
 func (m *ConnectionMgr) RemoveConnection(c *connection) {

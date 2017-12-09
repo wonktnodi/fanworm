@@ -50,6 +50,7 @@ func (r *PollingReactor) parseAddr(addr ...string) (err error) {
                 return err
             }
         }
+        ln.reactor = r
         r.lns = append(r.lns, &ln)
     }
 
@@ -118,7 +119,7 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
     // cleaning work
     defer r.clean(events)
 
-    var rsa syscall.Sockaddr
+    //var rsa syscall.Sockaddr
 
     var packet [0xFFFF]byte
     nextTicker := time.Now()
@@ -160,9 +161,10 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                 c := v.(*connection)
                 if now.After(v.Timeout()) {
                     r.timeoutqueue.Pop()
-                    if _, ok := r.idconn[c.id]; ok && c.opening {
+                    if _, ok := connMgr.idconn[c.id]; ok && c.opening {
                         delete(r.idconn, c.id)
                         delete(r.fdconn, c.fd)
+                        connMgr.RemoveConnection(c)
                         genAddrs(c)
                         syscall.Close(c.fd)
                         if events.Opened != nil {
@@ -201,9 +203,18 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
             var ln *listener
             var lnidx int
             var fd = getFD(&r.PollBase, i)
+
             for lnidx, ln = range lns {
                 if fd == ln.fd {
-                    goto accept
+                    c, err = ln.Accept()
+                    if err != nil {
+                        goto fail
+                    }
+
+                    r.fdconn[nfd] = c
+                    r.idconn[c.id] = c
+                    goto next
+                    //goto accept
                 }
             }
             ln = nil
@@ -217,28 +228,6 @@ func (r *PollingReactor) serve(events Events, lns []*listener) error {
                 goto opened
             }
             goto read
-        accept:
-            nfd, rsa, err = syscall.Accept(fd)
-            if err != nil {
-                goto next
-            }
-            if err = syscall.SetNonblock(nfd, true); err != nil {
-                goto fail
-            }
-
-            c = &connection{id: connMgr.GetID(), fd: nfd,
-                opening: true,
-                lnidx: lnidx,
-                raddr: sockaddrToAddr(rsa),
-            }
-            // we have a remote address but the local address yet.
-            if err = base.AddWrite(r.p, c.fd, &c.readon, &c.writeon); err != nil {
-                goto fail
-            }
-            connMgr.AddConnection(c)
-            r.fdconn[nfd] = c
-            r.idconn[c.id] = c
-            goto next
         opened:
             genAddrs(c)
             if err = base.AddRead(r.p, c.fd, &c.readon, &c.writeon); err != nil {
@@ -409,6 +398,7 @@ func (r *PollingReactor) dail(addr string, timeout time.Duration) int {
     }
     c := &connection{id: connMgr.GetID(), opening: true, lnidx: -1}
     r.idconn[c.id] = c
+    connMgr.AddConnection(c)
     if timeout != 0 {
         c.timeout = time.Now().Add(timeout)
         r.timeoutqueue.Push(c)
@@ -460,6 +450,7 @@ func (r *PollingReactor) dail(addr string, timeout time.Duration) int {
             }
             c.fd = fd
             r.fdconn[fd] = c
+            connMgr.AddConnection(c)
             r.unlock()
             return nil
         }()
@@ -484,6 +475,7 @@ func (r *PollingReactor) wake(id int) bool {
         return false
     }
     c := r.idconn[id]
+    c = connMgr.GetConnectionByID(id)
     if c == nil || c.fd == 0 {
         ok = false
     } else if !c.wake {
@@ -508,7 +500,7 @@ func (r *PollingReactor) clean(events Events) {
         lnidx   int
     }
     var fdids []fdid
-    for _, c := range r.idconn {
+    for _, c := range connMgr.idconn {
         if c.opening {
             genAddrs(c)
         }

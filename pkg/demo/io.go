@@ -10,6 +10,7 @@ import (
     "os"
     "strings"
     "time"
+    "syscall"
 )
 
 // Action is an action that occurs after the completion of an event.
@@ -189,6 +190,7 @@ type listener struct {
     network string
     addr    string
     naddr   net.Addr
+    reactor *PollingReactor
 }
 
 func parseAddr(addr string) (network, address string, stdlib bool) {
@@ -202,6 +204,29 @@ func parseAddr(addr string) (network, address string, stdlib bool) {
         stdlib = true
         network = network[:len(network)-4]
     }
+    return
+}
+
+func (l *listener) Accept() (conn *connection, err error) {
+    nfd, rsa, err := syscall.Accept(l.fd)
+    if err != nil {
+        return
+    }
+    if err = syscall.SetNonblock(nfd, true); err != nil {
+        return
+    }
+
+    conn = &connection{id: connMgr.GetID(), fd: nfd,
+        opening: true,
+        lnidx: 0,
+        raddr: sockaddrToAddr(rsa),
+    }
+    connMgr.AddConnection(conn)
+
+    if err = l.reactor.registerEventHandler(conn, EventRead|EventWrite); err != nil  {
+        return
+    }
+
     return
 }
 
