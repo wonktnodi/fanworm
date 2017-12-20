@@ -41,8 +41,6 @@ func (h TestEventHandler) Timeout() (tm time.Time) {
     return h.timeout
 }
 
-
-
 func TestHandlerMgr(t *testing.T) {
     mgr, err := NewHandlerMgr()
     assert.Equal(t, nil, err, "create handler from mgr")

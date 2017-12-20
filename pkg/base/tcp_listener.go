@@ -49,7 +49,7 @@ func (l *TcpListener) HandleInput(fd int) (err error) {
         return
     }
 
-    conn := &connection{id: connMgr.GetID(), fd: cfd,
+    conn := &Connection{id: connMgr.GetID(), fd: cfd,
         opening: true,
         lnidx: 0,
         raddr: sockaddrToAddr(rsa),
